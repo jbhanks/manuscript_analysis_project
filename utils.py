@@ -4,8 +4,13 @@ import urllib3
 from urllib3.util.retry import Retry
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
+from bs4 import BeautifulSoup
 import random
 import time
+import re
+from models import *
+
+
 
 def check_request_status(request, url):
     try:
@@ -63,12 +68,15 @@ def ff_request(url):
 
 
 
-def saveImage(html, download_dir="Downloads")
+def parse_paris_lib(html):
     soup = BeautifulSoup(html, features='html5lib')
     imgurl = soup.find("div", {"id": "visuDocument"}).find('img')['src']
     obj = soup.find("div", {"id": "visuDocument"}).find('img')['alt']
-    with open(download_dir + re.sub(' ', '_', obj), 'wb') as handle:
-        response = requests.get(imgurl, stream=True)
+    return {'imgurl' : imgurl, 'object' : obj}
+
+def save_image(imginfo, download_dir="Downloads/"):
+    with open(download_dir + re.sub(' ', '_', imginfo['object']), 'wb') as handle:
+        response = requests.get(imginfo['imgurl'], stream=True)
 
         if not response.ok:
             print(response)
@@ -79,3 +87,54 @@ def saveImage(html, download_dir="Downloads")
 
             handle.write(block)
 
+def get_page_info(filepath):
+    f = open(filepath, "r").read()
+    pages = f.split('\n\n')
+    orderpages = []
+    for page in pages:
+        info = OnePage()
+        head = page.split('\n')[0]
+        info.transliteration = page.split('\n',1)[1]
+        info.source = head.split(', ')[0]
+        info.plate = re.split('(\d+)', head.split(', ')[1])
+        info.verses = head.split(', ')[2]
+        orderpages.append(info)
+    orderpages = sorted(orderpages, key=lambda element: (int(element.plate[1]), element.plate[2]))
+    return orderpages
+
+
+def get_blocks_of_pages(pages_list):
+    new_lists = []
+    for idx,page in enumerate(pages_list):
+        if idx == 0:
+            print(idx)
+            print("first one!")
+            prev_idx = idx
+            prev_p = int(page.plate[1])
+            page.plate = page.plate[1] + page.plate[2]
+            new_lists.append([page])
+            continue
+        if int(page.plate[1]) - prev_p == 0:
+            print(idx, prev_idx)
+            print("opposite page!")
+            prev_p = int(page.plate[1])
+            prev_idx = idx
+            page.plate = page.plate[1] + page.plate[2]
+            new_lists[-1].append(page)
+            continue
+        if int(page.plate[1]) - prev_p > 1:
+            print(idx, prev_idx)
+            print("A gap!")
+            prev_p = int(page.plate[1])
+            prev_idx = idx
+            page.plate = page.plate[1] + page.plate[2]
+            new_lists.append([page])
+            continue
+        if int(page.plate[1]) - prev_p == 1:
+            print(idx, prev_idx)
+            print("consecutive!")
+            prev_p = int(page.plate[1])
+            prev_idx = idx
+            page.plate = page.plate[1] + page.plate[2]
+            new_lists[-1].append(page)
+    return new_lists
