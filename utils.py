@@ -8,9 +8,29 @@ from bs4 import BeautifulSoup
 import random
 import time
 import re
+import json
 from models import *
 
 
+def group_by_key(list_of_dicts):
+    grouped_info = {}
+    for d in list_of_dicts:
+        for key in d:
+            grouped_info.setdefault(key, list()).append(d[key])
+    return grouped_info
+
+def split_info(info):
+    infos = []
+    for section in info:
+        d = {}
+        d[section['key']['contenu']] = section['value']['contenu']
+        infos.append(d)
+    return infos
+
+def get_scripts(html):
+    soup = BeautifulSoup(html, features='html5lib')
+    scripts = soup.find_all('script', {'type' : 'text/javascript'})
+    return scripts
 
 def check_request_status(request, url):
     try:
@@ -66,13 +86,6 @@ def ff_request(url):
     driver.quit()
     return {"status" : "success", "result" : html}
 
-
-
-def parse_paris_lib(html):
-    soup = BeautifulSoup(html, features='html5lib')
-    imgurl = soup.find("div", {"id": "visuDocument"}).find('img')['src']
-    obj = soup.find("div", {"id": "visuDocument"}).find('img')['alt']
-    return {'imgurl' : imgurl, 'object' : obj}
 
 def save_image(imginfo, download_dir="Downloads/"):
     with open(download_dir + re.sub(' ', '_', imginfo['object']), 'wb') as handle:
@@ -138,3 +151,29 @@ def get_blocks_of_pages(pages_list):
             page.plate = page.plate[1] + page.plate[2]
             new_lists[-1].append(page)
     return new_lists
+
+def extract_clean_json(info_script):
+    txt2 = re.sub(".*?({.*}).*", r"\1", info_script, flags=re.DOTALL)
+    txt3 = re.sub("\\\\\\\\\\\\", '||||||||', txt2)
+    txt4 = re.sub("\\\\", '', txt3)
+    txt5 = re.sub("\|\|\|\|\|\|\|\|", '\\\\', txt4)
+    js_obj = json.loads(txt5)
+    extracted = js_obj['contenu'][0]['contenu']
+    return extracted
+
+def parse_paris_lib(html):
+    soup = BeautifulSoup(html, features='html5lib')
+    imgurl = soup.find("div", {"id": "visuDocument"}).find('img')['src']
+    obj = soup.find("div", {"id": "visuDocument"}).find('img')['alt']
+    return {'imgurl' : imgurl, 'object' : obj}
+
+def extract_info_bnf(scriptlist):
+    content_script = [
+    trimmed
+    for script in scriptlist
+    if (script_str := getattr(script, 'string', None)) and isinstance(script_str, str)
+    if (trimmed := re.sub(r"^\s+", "", script_str)).startswith('var menuFragment')
+    ][0]
+    subscripts = content_script.split('; var')
+    info_script = [s for s in subscripts if s.startswith(' informationsModel = JSON.parse')][0]
+    return info_script
