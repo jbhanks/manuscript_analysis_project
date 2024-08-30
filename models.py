@@ -2,6 +2,13 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class PageRequest:
+    status: str = None
+    result: str = None
+    url: str = None
+
+
+@dataclass
 class FullFolio:
     """Class for each folio"""
     source: str = None
@@ -9,6 +16,7 @@ class FullFolio:
     transliteration_file: str = None
     identifier: str = None
     urls: list[str] = field(default_factory=list)
+    total_pages: int = None
     pages: list['OnePage'] = field(default_factory=list)
 
 
