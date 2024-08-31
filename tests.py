@@ -69,7 +69,7 @@ ordered_pages = get_page_info(translit)
 
 pagelist = [page.plate for page in ordered_pages]
 
-nfolist = []
+# nfolist = []
 
 # for n in range(30, folio.total_pages + 1):
 #     url = folio.baseurl + 'f' + str(n)
@@ -115,7 +115,7 @@ nfolist = []
 #         return ordered_pages
 
 
-op2 = match_translit_to_imgurl(folio, ordered_pages)
+# op2 = match_translit_to_imgurl(folio, ordered_pages)
 ###
 scripts = get_scripts(soup)
 
