@@ -10,6 +10,7 @@ from urllib3.util.retry import Retry
 from urllib3.exceptions import ReadTimeoutError
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from bs4 import BeautifulSoup
 from models import OnePage, PageRequest
 
@@ -76,6 +77,7 @@ def basic_request(session, url):
 def ff_request(url):
     options = Options()
     options.add_argument("--headless")
+    # Ideally I would like to block loading of images at this step, but when I tried using `set_preference('permissions.default.image', 2)` it also changed the content rendering such that selectors were not available.
     driver = webdriver.Firefox(options=options)
     try:
         driver.get(url)
@@ -85,9 +87,10 @@ def ff_request(url):
     return PageRequest(status="success", result=html, url=url)
 
 # Function to save an image from a URL
-def save_image(imginfo, download_dir="Downloads/"):
-    filepath = os.path.join(download_dir, re.sub(r'\s+', '_', imginfo['object']))
-    response = requests.get(imginfo['imgurl'], stream=True)
+def save_image(page, download_dir="Downloads/"):
+    filepath = os.path.join(download_dir, page.plate)
+    page.imgpath = filepath
+    response = requests.get(page.imgurl, stream=True)
 
     if not response.ok:
         logging.debug(f"Image download failed for {imginfo['imgurl']}: {response}")
@@ -108,7 +111,7 @@ def get_page_info(filepath):
         info = OnePage()
         head, transliteration = page.split('\n', 1)
         info.transliteration = transliteration
-        info.source, plate, info.verses = head.split(', ')
+        info.doc_id, plate, info.verses = head.split(', ')
         info.plate = re.split(r'(\d+)', plate)
         ordered_pages.append(info)
 
@@ -135,28 +138,31 @@ def get_blocks_of_pages(pages_list):
     return new_lists
 
 # Function to match transliteration data to image URLs
-def match_translit_to_imgurl(folio, ordered_pages):
-    for n in range(30, folio.total_pages + 1):
-        url = f'{folio.baseurl}f{n}'
-        data = ff_request(url)
-        nfo = parse_paris_lib(data.result)
-
-        if not nfo or nfo['plate'] not in pagelist:
+def match_translit_to_imgurl(start, end, baseurl, ordered_pages, pagelist):
+    matching_plates = []
+    for n in range(start, end + 1):
+        time.sleep(round(random.uniform(2,5),3))
+        url = f'{baseurl}f{n}'
+        try:
+            data = ff_request(url)
+        except ConnectionResetError:
+            logging.warning(f"Connection reset error for {url}")
+            time.sleep(round(random.uniform(30,60),2))
+            continue
+        try:
+            imgurl, plate = parse_plate_page(data.result)
+        except TypeError:
+            logging.warning(f"Skipping plate for {url}")
             continue
 
-        matching_plate = [p for p in ordered_pages if p.plate == nfo['plate']]
-
-        if len(matching_plate) > 1:
-            logging.warning(f"More than one match for plate {nfo['plate']}, skipping...")
-            continue
-        if not matching_plate:
-            logging.warning(f"Plate {nfo['plate']} not found in transliteration document, skipping...")
+        if plate not in pagelist:
             continue
 
-        # Update the original OnePage object with the imgurl
-        matching_plate[0].imgurl = nfo['imgurl']
-
-    return ordered_pages
+        matching_plate = [p for p in ordered_pages if p.plate == plate][0]
+        matching_plate.url = url
+        matching_plate.imgurl = imgurl
+        matching_plates.append(matching_plate)
+    return matching_plates
 
 # Function to extract clean JSON data from a script tag
 def extract_clean_json(info_script):
@@ -168,7 +174,7 @@ def extract_clean_json(info_script):
     return js_obj['contenu'][0]['contenu']
 
 # Function to parse HTML and extract image URL and plate information
-def parse_paris_lib(html):
+def parse_plate_page(html):
     soup = BeautifulSoup(html, 'html5lib')
     img = soup.find("div", {"id": "visuDocument"}).find('img')
 
@@ -177,7 +183,8 @@ def parse_paris_lib(html):
 
     imgurl = img['src']
     plate = re.sub(r'View.* ', '', img['alt'])
-    return {'imgurl': imgurl, 'plate': plate}
+    # return folio
+    return imgurl, plate
 
 # Function to extract specific information from a list of scripts
 def extract_info_bnf(scriptlist):
@@ -190,3 +197,45 @@ def extract_info_bnf(scriptlist):
     subscripts = content_script.split('; var')
     info_script = next(s for s in subscripts if s.startswith(' informationsModel = JSON.parse'))
     return info_script
+
+
+def populate_empty_attributes(instance, data_dict):
+    for key, value in data_dict.items():
+        if hasattr(instance, key):
+            current_value = getattr(instance, key)
+            # Check if the attribute is None, an empty string, or an empty list
+            if current_value is None or current_value == '' or (isinstance(current_value, list) and len(current_value) == 0):
+                setattr(instance, key, value)
+
+
+def get_manuscript_info(soup):
+    scripts = get_scripts(soup)
+    info_script = extract_info_bnf(scripts)
+    extracted = extract_clean_json(info_script)
+    infos = split_info(extracted)
+    grouped_info = group_by_key(infos)
+    grouped_info = {k.lower():v for k,v in grouped_info.items()}
+    return grouped_info
+
+
+def populate_empty_attributes(instance, data_dict):
+    for key, value in data_dict.items():
+        if hasattr(instance, key):
+            current_value = getattr(instance, key)
+            # Check if the attribute is None, an empty string, or an empty list
+            if current_value is None or current_value == '' or (isinstance(current_value, list) and len(current_value) == 0):
+                setattr(instance, key, value)
+
+
+def get_plate_info(folio, basepath):
+    translit = basepath + folio.transliteration_file
+    ordered_pages = get_page_info(translit)
+    pagelist = [page.plate for page in ordered_pages]
+    matched = match_translit_to_imgurl(30, folio.total_pages, folio.baseurl, ordered_pages, pagelist)
+    return matched
+
+
+def save_images(pagelist):
+    for page in pagelist:
+        time.sleep(round(random.uniform(4,10),5))
+        save_image(page)
