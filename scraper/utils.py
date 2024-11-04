@@ -14,6 +14,17 @@ from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
 from bs4 import BeautifulSoup
 from models import OnePage, PageRequest
 
+
+logging.basicConfig(
+    filename="app.log",
+    encoding="utf-8",
+    filemode="a",
+    format="{asctime} - {levelname} - {message}",
+    style="{",
+    datefmt="%Y-%m-%d %H:%M",
+)
+
+
 # Function to group dictionaries by their keys
 def group_by_key(list_of_dicts):
     grouped_info = {}
